@@ -34,6 +34,7 @@ import java.util.{ Optional, Properties }
 import sbt.internal.inc.classpath.{ ClassLoaderCache, ClasspathUtilities }
 import sbt.internal.scripted.{ StatementHandler, TestFailed }
 import sbt.internal.util.ManagedLogger
+import sbt.librarymanagement.Resolver
 import sjsonnew.support.scalajson.unsafe.{ Converter, Parser => JsonParser }
 
 import scala.{ PartialFunction => ?=> }
@@ -55,6 +56,22 @@ final class IncHandler(directory: File, cacheDir: File, scriptedLog: ManagedLogg
 
   type State = Option[IncInstance]
   type IncCommand = (ProjectStructure, List[String], IncInstance) => Unit
+
+  private final val ZincScriptedLocal =
+    s"$${user.dir}/.ivy2/zinc-scripted-local/${Resolver.localBasePattern}"
+  private final val ScriptedResolver: Resolver = {
+    import sbt.librarymanagement.{ FileRepository, Patterns }
+    val toUse = Vector(ZincScriptedLocal)
+    val ivyPattern = Patterns().withIsMavenCompatible(false)
+    val finalPatterns = ivyPattern
+      .withIvyPatterns(toUse)
+      .withArtifactPatterns(toUse)
+      .withSkipConsistencyCheck(true)
+    FileRepository("zinc-scripted-local", Resolver.defaultFileConfiguration, finalPatterns)
+  }
+
+  // Use the scripted resolver to make sure that we don't mistakenly get other jars
+  override val resolvers: Array[Resolver] = Array(ScriptedResolver, Resolver.mavenCentral)
 
   val compiler = new IncrementalCompilerImpl
 
@@ -127,14 +144,13 @@ final class IncHandler(directory: File, cacheDir: File, scriptedLog: ManagedLogg
         toCache
     }
     val analyzingCompiler = scalaCompiler(si, compilerBridge)
-    IncInstance(si, compiler.compilers(si, ClasspathOptionsUtil.boot, None, analyzingCompiler))
+    IncInstance(si, compiler.compilers(si, None, analyzingCompiler))
   }
 
   private final val unit = (_: Seq[String]) => ()
   def scalaCompiler(instance: xsbti.compile.ScalaInstance, bridgeJar: File): AnalyzingCompiler = {
     val bridgeProvider = ZincUtil.constantBridgeProvider(instance, bridgeJar)
-    val classpath = ClasspathOptionsUtil.boot
-    new AnalyzingCompiler(instance, bridgeProvider, classpath, unit, IncHandler.classLoaderCache)
+    new AnalyzingCompiler(instance, bridgeProvider, unit, IncHandler.classLoaderCache)
   }
 
   lazy val commands: Map[String, IncCommand] = Map(
@@ -385,6 +401,7 @@ case class ProjectStructure(
                              classesDir,
                              scalacOptions,
                              Array(),
+                             ClasspathOptionsUtil.boot(),
                              maxErrors,
                              Array(),
                              CompileOrder.Mixed,
