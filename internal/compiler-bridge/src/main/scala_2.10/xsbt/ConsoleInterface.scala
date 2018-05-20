@@ -38,40 +38,42 @@ class ConsoleInterface {
     log.info(Message("Starting scala interpreter..."))
     log.info(Message(""))
 
-    val loop = new ILoop {
-      override def createInterpreter() = {
-        if (loader ne null) {
-          in = InteractiveReader.apply()
-          intp = new IMain(settings) {
-            override protected def parentClassLoader =
-              if (loader eq null) super.parentClassLoader else loader
+    Console.withIn(System.in) {
+      val loop = new ILoop {
+        override def createInterpreter() = {
+          if (loader ne null) {
+            in = InteractiveReader.apply()
+            intp = new IMain(settings) {
+              override protected def parentClassLoader =
+                if (loader eq null) super.parentClassLoader else loader
 
-            override protected def newCompiler(settings: Settings, reporter: Reporter) =
-              super.newCompiler(compilerSettings, reporter)
-          }
-          intp.setContextClassLoader()
-        } else
-          super.createInterpreter()
+              override protected def newCompiler(settings: Settings, reporter: Reporter) =
+                super.newCompiler(compilerSettings, reporter)
+            }
+            intp.setContextClassLoader()
+          } else
+              super.createInterpreter()
 
-        for ((id, value) <- bindNames zip bindValues)
-          intp.quietBind(NamedParam.clazz(id, value))
+          for ((id, value) <- bindNames zip bindValues)
+            intp.quietBind(NamedParam.clazz(id, value))
 
-        if (!initialCommands.isEmpty)
-          intp.interpret(initialCommands)
+          if (!initialCommands.isEmpty)
+            intp.interpret(initialCommands)
 
-        ()
+          ()
+        }
+
+        override def closeInterpreter(): Unit = {
+          if (!cleanupCommands.isEmpty)
+            intp.interpret(cleanupCommands)
+          super.closeInterpreter()
+        }
       }
 
-      override def closeInterpreter(): Unit = {
-        if (!cleanupCommands.isEmpty)
-          intp.interpret(cleanupCommands)
-        super.closeInterpreter()
-      }
+      loop.process(if (loader eq null) compilerSettings else interpreterSettings)
+
+      ()
     }
-
-    loop.process(if (loader eq null) compilerSettings else interpreterSettings)
-
-    ()
   }
 }
 

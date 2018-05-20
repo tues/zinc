@@ -39,36 +39,38 @@ class ConsoleInterface {
     log.info(Message("Starting scala interpreter..."))
     log.info(Message(""))
 
-    val loop = new ILoop(ShellConfig(interpreterSettings)) {
-      override def createInterpreter(interpreterSettings: Settings) = {
-        if (loader ne null) {
-          val reporter = new ReplReporterImpl(interpreterSettings)
-          intp = new IMain(interpreterSettings, reporter) {
-            override protected def parentClassLoader =
-              if (loader eq null) super.parentClassLoader
-              else loader
-          }
-          intp.setContextClassLoader()
-        } else
-          super.createInterpreter(interpreterSettings)
+    Console.withIn(System.in) {
+      val loop = new ILoop(ShellConfig(interpreterSettings)) {
+        override def createInterpreter(interpreterSettings: Settings) = {
+          if (loader ne null) {
+            val reporter = new ReplReporterImpl(interpreterSettings)
+            intp = new IMain(interpreterSettings, reporter) {
+              override protected def parentClassLoader =
+                if (loader eq null) super.parentClassLoader
+                else loader
+            }
+            intp.setContextClassLoader()
+          } else
+              super.createInterpreter(interpreterSettings)
 
-        for ((id, value) <- bindNames zip bindValues)
-          intp.beQuietDuring(intp.bind(id, value.asInstanceOf[AnyRef].getClass.getName, value))
+          for ((id, value) <- bindNames zip bindValues)
+            intp.beQuietDuring(intp.bind(id, value.asInstanceOf[AnyRef].getClass.getName, value))
 
-        if (!initialCommands.isEmpty)
-          intp.interpret(initialCommands)
+          if (!initialCommands.isEmpty)
+            intp.interpret(initialCommands)
 
-        ()
+          ()
+        }
+
+        override def closeInterpreter(): Unit = {
+          if (!cleanupCommands.isEmpty)
+            intp.interpret(cleanupCommands)
+          super.closeInterpreter()
+        }
       }
 
-      override def closeInterpreter(): Unit = {
-        if (!cleanupCommands.isEmpty)
-          intp.interpret(cleanupCommands)
-        super.closeInterpreter()
-      }
+      loop.run(compilerSettings)
     }
-
-    loop.run(compilerSettings)
   }
 }
 
